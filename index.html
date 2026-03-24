@@ -1,0 +1,171 @@
+<script>
+    // הקישורים המעודכנים שלך
+    const JOKES_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSR74JGStqevOMg4uFKqudbSRFEQVRisiEgSwTuxnLjsTUx7TShIVuzPkdRgOZiJq8Pz3H-zoa_3mK3/pub?gid=0&single=true&output=csv';
+    const PHOTOS_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSevdjPZljQNazIav8vcVOszHVu5iKOA-AtYUjwhZGuZUibJpjgnJHC_tsrZY11p9aAE_iQytePZsAZ/pub?output=csv';
+    const TEXTS_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSXdGMnIRS-ydFn4BRfngLIAbdveYx7L7eS96kCvpruVDca1-uGk3qyQY9Nh9C_eTpbjKoojzB2zlFn/pub?gid=1983290067&single=true&output=csv';
+    const COMMENTS_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRLoH5kw3YDw4HGqSflNsJfe-Gaq34n-5916WzKs-wFlAiCOUiit6ZqmkUiKprnAyJ6ezB0bwQhkGej/pub?output=csv';
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwqak-Ai_5xyULt8tV0cjexgd-yp7K6ACOTAJXYhdGdaG3v_xqD-vcAS-dgnjBnRyVr/exec';
+
+    let data = { jokes: [], photos: [], texts: [], comments: [] };
+    let currentOpenItem = null;
+
+    async function init() {
+        const [j, p, t, c] = await Promise.all([
+            fetchCSV(JOKES_URL, true), fetchCSV(PHOTOS_URL, false), fetchCSV(TEXTS_URL, true), fetchCSV(COMMENTS_URL, false)
+        ]);
+        
+        data.jokes = j;
+        data.photos = p.slice(1).map(r => ({ title: r[0], id: r[1], category: r[2] || 'כללי' }));
+        data.texts = t;
+        
+        // סינון תגובות שאושרו (מניח ש-YES מופיע בעמודה 6 או 7)
+        data.comments = c.slice(1).filter(r => r[5] === "YES" || r[6] === "YES");
+
+        showPage('home');
+    }
+
+    function fetchCSV(url, header) {
+        return new Promise(res => Papa.parse(url, { download: true, header, skipEmptyLines: true, complete: r => res(r.data) }));
+    }
+
+    function showPage(pageId) {
+        const container = document.getElementById('main-content');
+        window.scrollTo(0,0);
+        if (pageId === 'home') renderHome(container);
+        else if (pageId === 'gallery') renderArchive(container, 'גלריה', data.photos, 'category', renderPhotoCard);
+        else if (pageId === 'texts') renderArchive(container, 'סיפורים ויצירות', data.texts, 'Type', renderTextCard);
+        else if (pageId === 'jokes') renderArchive(container, 'מאגר הבדיחות', data.jokes, 'Categories', renderJokeCard);
+        else if (pageId === 'about') renderAbout(container);
+    }
+
+    function renderHome(container) {
+        const randomJoke = data.jokes.length > 0 ? data.jokes[Math.floor(Math.random() * data.jokes.length)] : { 'Joke Content': 'טוען בדיחה...' };
+        const samplePhotos = [...data.photos].sort(() => 0.5 - Math.random()).slice(0, 4);
+        const sampleTexts = [...data.texts].sort(() => 0.5 - Math.random()).slice(0, 3);
+
+        container.innerHTML = `
+            <div class="hero">
+                <div class="hero-img"><img src="https://lh3.googleusercontent.com/d/${data.photos[0]?.id}"></div>
+                <div class="hero-text">
+                    <h1>ברק לב שלם</h1>
+                    <p>ברוכים הבאים לאתר הזיכרון של ברק. מקום שבו אספנו את המילים שלו, החיוך שלו והבדיחות שתמיד ידע לספר.</p>
+                </div>
+            </div>
+            <div class="section-header"><h3>בדיחה אקראית של ברק</h3><button class="filter-btn" onclick="showPage('jokes')">לכל הבדיחות</button></div>
+            <div style="background:white; padding:30px; border-radius:15px; border-right:5px solid var(--accent); margin-bottom:40px; font-size:1.4rem; font-style:italic;">
+                "${randomJoke['Joke Content']}"
+            </div>
+            <div class="section-header"><h3>מהגלריה</h3><button class="filter-btn" onclick="showPage('gallery')">הצג הכל</button></div>
+            <div class="grid">${samplePhotos.map(renderPhotoCard).join('')}</div>
+            <div class="section-header"><h3>סיפורים ויצירות</h3><button class="filter-btn" onclick="showPage('texts')">הצג הכל</button></div>
+            <div class="grid">${sampleTexts.map(renderTextCard).join('')}</div>
+        `;
+    }
+
+    function renderArchive(container, title, items, filterKey, cardFunc) {
+        let cats = [];
+        items.forEach(i => (i[filterKey] || 'כללי').split(',').forEach(c => cats.push(c.trim())));
+        const uniqueCats = [...new Set(cats)];
+
+        container.innerHTML = `
+            <h2>${title}</h2>
+            <div class="filter-bar">
+                <button class="filter-btn active" onclick="filterData(this, 'all')">הכל</button>
+                ${uniqueCats.map(c => `<button class="filter-btn" onclick="filterData(this, '${c}')">${c.replace('היצירה של ברק - ', '')}</button>`).join('')}
+            </div>
+            <div class="grid" id="archive-grid">${items.map((item, index) => cardFunc(item, index)).join('')}</div>
+        `;
+    }
+
+    function filterData(btn, cat) {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelectorAll('#archive-grid > .card').forEach(card => {
+            const cardCats = card.getAttribute('data-cat');
+            card.style.display = (cat === 'all' || cardCats.includes(cat)) ? 'flex' : 'none';
+        });
+    }
+
+    function renderPhotoCard(p) {
+        return `<div class="card" data-cat="${p.category}" onclick="openItem('photo', '${p.id}')">
+            <img src="https://lh3.googleusercontent.com/d/${p.id}">
+            <div class="card-content"><span class="tag">${p.category}</span><p>${p.title}</p></div>
+        </div>`;
+    }
+
+    function renderTextCard(t) {
+        return `<div class="card" data-cat="${t.Type}" onclick="openItem('text', '${t.Link}')">
+            <div class="card-content"><span class="tag">${t.Type.replace('היצירה של ברק - ', '')}</span><h4>${t.Title}</h4><p>${t.Author || ''}</p></div>
+        </div>`;
+    }
+
+    function renderJokeCard(j, index) {
+        return `<div class="card" data-cat="${j.Categories}" onclick="openItem('joke', '${index}')">
+            <div class="card-content">
+                ${(j.Categories || '').split(',').map(c => `<span class="tag">${c.trim()}</span>`).join('')}
+                <p>"${j['Joke Content']}"</p>
+                <div class="source-tag">${j.Source || 'בדיחה שברק אהב'}</div>
+            </div>
+        </div>`;
+    }
+
+    async function openItem(type, id) {
+        currentOpenItem = {type, id};
+        const body = document.getElementById('modal-body');
+        document.getElementById('item-modal').style.display = 'flex';
+        body.innerHTML = 'טוען...';
+
+        if(type === 'photo') body.innerHTML = `<img src="https://lh3.googleusercontent.com/d/${id}" style="width:100%; border-radius:10px;">`;
+        else if(type === 'joke') {
+            const joke = data.jokes[id];
+            body.innerHTML = `<h3>בדיחה</h3><p style="font-size:1.4rem;">"${joke['Joke Content']}"</p><div class="source-tag">${joke.Source || ''}</div>`;
+        } else if(type === 'text') {
+            // תצוגת מסמך גוגל בתוך האתר
+            const docId = id.split('/d/')[1]?.split('/')[0] || id;
+            body.innerHTML = `<iframe src="https://docs.google.com/document/d/${docId}/pub?embedded=true" style="width:100%; height:60vh; border:none;"></iframe>`;
+        }
+        renderComments(id);
+    }
+
+    function renderComments(itemId) {
+        const area = document.getElementById('comment-area');
+        const filtered = data.comments.filter(c => c[3] === itemId);
+        area.innerHTML = `<div class="comment-section">
+            <h4>תגובות וזכרונות (${filtered.length})</h4>
+            ${filtered.map(c => `<div class="comment-bubble"><strong>${c[0]} (${c[1]}):</strong><p>${c[2]}</p></div>`).join('')}
+            <div class="comment-form">
+                <input type="text" id="c-name" placeholder="שם מלא">
+                <input type="text" id="c-rel" placeholder="קשר לברק">
+                <textarea id="c-content" placeholder="כתבו מילה חמה..."></textarea>
+                <button class="submit-btn" onclick="submitComment('${itemId}')">שלח תגובה</button>
+            </div>
+        </div>`;
+    }
+
+    async function submitComment(itemId) {
+        const payload = {
+            name: document.getElementById('c-name').value,
+            relation: document.getElementById('c-rel').value,
+            content: document.getElementById('c-content').value,
+            item_id: itemId
+        };
+        try {
+            await fetch(APPS_SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify(payload) });
+            alert("תודה! התגובה נשלחה ותופיע לאחר אישור.");
+            closeModal();
+        } catch(e) { alert("שגיאה בשליחה"); }
+    }
+
+    function closeModal() { document.getElementById('item-modal').style.display = 'none'; }
+    function copyShareLink() {
+        const link = window.location.origin + window.location.pathname + "#" + currentOpenItem.type + "=" + currentOpenItem.id;
+        navigator.clipboard.writeText(link);
+        alert("הקישור הועתק!");
+    }
+    
+    function renderAbout(container) {
+        container.innerHTML = `<div class="container" style="max-width:700px"><h2>אודות האתר</h2><p>כאן תוכל להוסיף את הטקסט שרצית על האתר ועל ברק.</p></div>`;
+    }
+
+    window.onload = init;
+</script>
